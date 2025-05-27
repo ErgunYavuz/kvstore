@@ -1,0 +1,15 @@
+
+Node 1 (Leader)           Node 2 (Follower)          Node 3 (Follower)
+-----------------          ------------------        ------------------
+| MemoryStorage |          | MemoryStorage |         | MemoryStorage |
+|---------------|          |---------------|         |---------------|
+| key1: valA    |          | key1: valA    |         | key1: valA    |
+| key2: valB    |          | key2: valB    |         | key2: valB    |
+-----------------          ------------------        ------------------
+       ^                           ^                          ^
+       | (Replicate via gRPC)      | (Replicate via gRPC)     |
+       |                           |                          |
+-----------------          ------------------        ------------------
+| gRPC Server   |          | gRPC Server   |         | gRPC Server   |
+| (Port: 50051) | <------> | (Port: 50052) | <-----> | (Port: 50053) |
+-----------------          ------------------        ------------------
