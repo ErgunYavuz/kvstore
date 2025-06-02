@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
-	"kvstore/storage"
+	"kvstore/iface"
 	"net"
 
 	"google.golang.org/grpc"
@@ -11,26 +11,26 @@ import (
 )
 
 type GRPCServer struct {
-	Storage *storage.MemoryStorage
+	node iface.NodeAPI
 	UnimplementedKVStoreServer
 }
 
-func NewServer(storage *storage.MemoryStorage) *GRPCServer {
-	return &GRPCServer{Storage: storage}
+func NewServer(n iface.NodeAPI) *GRPCServer {
+	return &GRPCServer{node: n}
 }
 
 func (s *GRPCServer) Put(ctx context.Context, req *PutRequest) (*PutResponse, error) {
-	err := s.Storage.Put(req.Key, req.Value)
+	err := s.node.HandlePut(req.Key, req.Value)
 	return &PutResponse{Success: err == nil}, err
 }
 
 func (s *GRPCServer) Get(ctx context.Context, req *GetRequest) (*GetResponse, error) {
-	value, err := s.Storage.Get(req.Key)
+	value, err := s.node.HandleGet(req.Key)
 	return &GetResponse{Value: value}, err
 }
 
 func (s *GRPCServer) Delete(ctx context.Context, req *DeleteRequest) (*DeleteResponse, error) {
-	bool, err := s.Storage.Delete(req.Key)
+	bool, err := s.node.Delete(req.Key)
 	return &DeleteResponse{Success: bool}, err
 }
 
@@ -43,6 +43,6 @@ func (s *GRPCServer) StartGRPCServer(addr string) error {
 
 	grpcServer := grpc.NewServer()
 	reflection.Register(grpcServer)
-	RegisterKVStoreServer(grpcServer, &GRPCServer{Storage: s.Storage})
+	RegisterKVStoreServer(grpcServer, &GRPCServer{node: s.node})
 	return grpcServer.Serve(listener)
 }
