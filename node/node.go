@@ -1,37 +1,35 @@
 package node
 
 import (
-	"context"
 	"kvstore/server"
 	"kvstore/storage"
 	"log"
-	"time"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
 	LEADER   = 1
 	FOLLOWER = 2
+	DELETE   = "delete"
+	PUT      = "put"
 )
 
 type Node struct {
 	id         int            // unique identifier for the node
 	state      int            // current state of the node: LEADER or FOLLOWER LEADER = 1, FOLLOWER = 2
 	leader     int            // id of the current leader if node is follower
-	followers  map[int]string // ids of the followers if node is leader
+	leaderAddr string         // address of the leader if node is follower
+	nodes      map[int]string // ids of the followers if node is leader
 	storage    *storage.MemoryStorage
 	grpcServer *server.GRPCServer
 }
 
 func NewNode(id int, addr string, state int) *Node {
 	n := &Node{
-		id:        id,
-		state:     state,
-		leader:    -1, // no leader initially
-		followers: make(map[int]string),
-		storage:   storage.NewMemoryStorage(),
+		id:      id,
+		state:   state,
+		leader:  -1, // no leader initially
+		nodes:   make(map[int]string),
+		storage: storage.NewMemoryStorage(),
 	}
 
 	n.grpcServer = server.NewServer(n)
@@ -59,8 +57,9 @@ func (n *Node) IsLeader() bool {
 	return n.state == LEADER
 }
 
-func (n *Node) SetLeader(leaderID int) {
+func (n *Node) SetLeader(leaderID int, addr string) {
 	n.leader = leaderID
+	n.leaderAddr = addr
 	if leaderID == n.id {
 		n.state = LEADER
 	} else {
@@ -69,37 +68,22 @@ func (n *Node) SetLeader(leaderID int) {
 }
 
 func (n *Node) AddFollower(followerID int, followerAddr string) {
-	n.followers[followerID] = followerAddr
+	n.nodes[followerID] = followerAddr
 }
 
-func (n *Node) HandlePut(key, value string) error {
-	err := n.storage.Put(key, value)
-	if err != nil {
-		return err
-	}
-
+func (n *Node) HandlePut(requesterID int, key, value string) error {
 	if n.IsLeader() {
-		for followerID, followerAddr := range n.followers {
-			go func(id int, addr string) {
-				log.Printf("Node %d replicating Put to follower %d at %s", n.id, id, addr)
-				conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-				if err != nil {
-					log.Printf("Failed to connect to follower %d: %v", id, err)
-					return
-				}
-				defer conn.Close()
-
-				client := server.NewKVStoreClient(conn)
-				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-				defer cancel()
-
-				_, err = client.Put(ctx, &server.PutRequest{Key: key, Value: value})
-				if err != nil {
-					log.Printf("Replication to follower %d failed: %v", id, err)
-				} else {
-					log.Printf("Successfully replicated to follower %d", id)
-				}
-			}(followerID, followerAddr)
+		err := n.storage.Put(key, value)
+		if err != nil {
+			return err
+		}
+		broadcastRequest(n.id, n.nodes, PUT, key, value)
+	} else if requesterID != n.leader {
+		forwardRequestToLeader(n.id, n.leaderAddr, PUT, key, value)
+	} else {
+		err := n.storage.Put(key, value)
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -113,35 +97,20 @@ func (n *Node) HandleGet(key string) (string, error) {
 	return value, nil
 }
 
-func (n *Node) Delete(key string) (bool, error) {
-	success, err := n.storage.Delete(key)
-	if err != nil {
-		return false, err
-	}
-
+func (n *Node) HandleDelete(requesterID int, key string) error {
 	if n.IsLeader() {
-		for followerID, followerAddr := range n.followers {
-			go func(id int, addr string) {
-				log.Printf("Node %d replicating Put to follower %d at %s", n.id, id, addr)
-				conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-				if err != nil {
-					log.Printf("Failed to connect to follower %d: %v", id, err)
-					return
-				}
-				defer conn.Close()
-
-				client := server.NewKVStoreClient(conn)
-				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-				defer cancel()
-
-				_, err = client.Delete(ctx, &server.DeleteRequest{Key: key})
-				if err != nil {
-					log.Printf("Replication to follower %d failed: %v", id, err)
-				} else {
-					log.Printf("Successfully replicated to follower %d", id)
-				}
-			}(followerID, followerAddr)
+		_, err := n.storage.Delete(key)
+		if err != nil {
+			return err
+		}
+		broadcastRequest(n.id, n.nodes, DELETE, key, "")
+	} else if requesterID != n.leader {
+		forwardRequestToLeader(n.id, n.leaderAddr, DELETE, key, "")
+	} else {
+		_, err := n.storage.Delete(key)
+		if err != nil {
+			return err
 		}
 	}
-	return success, nil
+	return nil
 }

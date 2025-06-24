@@ -19,8 +19,8 @@ func main() {
 	n3 := node.NewNode(3, "localhost:50053", node.FOLLOWER)
 	n.AddFollower(2, "localhost:50052")
 	n.AddFollower(3, "localhost:50053")
-	n2.SetLeader(1)
-	n3.SetLeader(1)
+	n2.SetLeader(1, "localhost:50051")
+	n3.SetLeader(1, "localhost:50051")
 
 	log.Printf("Node %d created as %s", n.GetID(), getStateString(n.GetState()))
 	log.Printf("Node %d created as %s", n2.GetID(), getStateString(n2.GetState()))

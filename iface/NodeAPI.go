@@ -1,7 +1,7 @@
 package iface
 
 type NodeAPI interface {
-	HandlePut(key, value string) error
+	HandlePut(requesterID int, key, value string) error
 	HandleGet(key string) (string, error)
-	Delete(key string) (bool, error)
+	HandleDelete(requesterID int, key string) error
 }

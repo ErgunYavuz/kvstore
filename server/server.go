@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"kvstore/iface"
+	"log"
 	"net"
+	"strconv"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -20,7 +22,17 @@ func NewServer(n iface.NodeAPI) *GRPCServer {
 }
 
 func (s *GRPCServer) Put(ctx context.Context, req *PutRequest) (*PutResponse, error) {
-	err := s.node.HandlePut(req.Key, req.Value)
+	var requesterID int
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if val, ok := md["requesterid"]; ok && len(val) > 0 {
+			id, err := strconv.Atoi(val[0])
+			if err == nil {
+				requesterID = id
+			}
+		}
+	}
+
+	err := s.node.HandlePut(requesterID, req.Key, req.Value)
 	return &PutResponse{Success: err == nil}, err
 }
 
@@ -30,14 +42,24 @@ func (s *GRPCServer) Get(ctx context.Context, req *GetRequest) (*GetResponse, er
 }
 
 func (s *GRPCServer) Delete(ctx context.Context, req *DeleteRequest) (*DeleteResponse, error) {
-	bool, err := s.node.Delete(req.Key)
-	return &DeleteResponse{Success: bool}, err
+	var requesterID int
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if val, ok := md["requesterid"]; ok && len(val) > 0 {
+			id, err := strconv.Atoi(val[0])
+			if err == nil {
+				requesterID = id
+			}
+		}
+	}
+	err := s.node.HandleDelete(requesterID, req.Key)
+
+	return &DeleteResponse{Success: err == nil}, err
 }
 
 func (s *GRPCServer) StartGRPCServer(addr string) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		fmt.Errorf("failed to listen: %v", err)
+		log.Printf("failed to listen: %v", err)
 		return err
 	}
 
